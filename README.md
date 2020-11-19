@@ -1,5 +1,5 @@
 # vawstats
-The code use to estimate global, regional, and national violence against women statistics is presented here. (The database has yet been publicly released, however.)
+This repository contains the code used to estimate global, regional, and national violence against women statistics is presented here. (The database has yet been publicly released, however.)
 
 The first two scripts are used to estimate adjustment factors for the crosswalk:
 
