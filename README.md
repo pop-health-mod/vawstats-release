@@ -1,1 +1,1 @@
-# vawstats-release
+# vawstats
