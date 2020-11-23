@@ -1,9 +1,9 @@
 # vawstats
-This repository contains the code used to produce estimates of global, regional, and national violence against women statistics is presented here. The methods are described in the preprint titled: [*A framework to model global, regional, and national estimates of intimate partner violence*](https://doi.org/10.1101/2020.11.19.20235101)
+This repository contains the code used to produce estimates of global, regional, and national violence against women (VAW) statistics is presented here. The methods are described in the preprint titled: [*A framework to model global, regional, and national estimates of intimate partner violence*](https://doi.org/10.1101/2020.11.19.20235101)
 
 (The database has yet been publicly released, however. The clearance process from co-custodians is in progress.)
 
-The first two scripts are used to estimate adjustment factors for the crosswalk:
+The first two scripts are used to estimate adjustment factors for the crosswalk for the meta-regression of *lifetime intimate partner violence* (IPV) and *past year IPV*:
 
 `1.0a CrossWalk Ever IPV.R`   
 
