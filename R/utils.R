@@ -265,7 +265,8 @@ world_map_data <- function(study_id, iso3, outcome = "Ever IPV", width = 11, hei
 
 #' Selecting Optimal Set
 optimal_set <- function(data, outcome = "Ever IPV") {
-  if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) { stop("Incorrect outcome name") }
+  if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV",
+                       "Past Year NPSV"))) { stop("Incorrect outcome name") }
 
 
   if (outcome == "Ever IPV") {
@@ -406,6 +407,30 @@ optimal_set <- function(data, outcome = "Ever IPV") {
       }
       vaw <- rbind(vaw, ipv.i) }}
 
+  if (outcome == "Past Year NPSV") {
+    for (i in 1:length(UID)) {
+      ipv.i <- data[data$IDage == UID[i], ]
+      if (nrow(ipv.i) > 1) {
+      # --- We select "Ever" over "Past Yr"
+        if (nrow(ipv.i) > 1 & any(ipv.i$viotime == "Past yr")) {
+            ipv.i <- ipv.i[ipv.i$viotime == "Past yr", ] }
+      # If a broad age group and a small one, we prefer age-specific information
+        if (length(unique(ipv.i$agerange)) > 1) {
+            min_age <- ipv.i$AgeM %in% min(ipv.i$AgeM)
+            ipv.i <- ipv.i[min_age, ] } 
+      # --- We select "non-severe" of "severe"
+        if (nrow(ipv.i) > 1 & any(ipv.i$severe == "Not only severe violence")) {
+            ipv.i <- ipv.i[ipv.i$severe == "Not only severe violence", ] }
+      # --- We select "boyfriend since aged 15" over other
+        if (nrow(ipv.i) > 1 & any(ipv.i$npsvsince15_bf == "Since 15_bf")) {
+            ipv.i <- ipv.i[ipv.i$npsvsince15_bf == "Since 15_bf", ] } 
+        if (nrow(ipv.i) > 1 & any(ipv.i$sexviotime15 == "Since 15")) {
+            ipv.i <- ipv.i[ipv.i$sexviotime15 == "Since 15", ] }
+        if (nrow(ipv.i) > 1 & any(ipv.i$npsvever_bf == "Ever_bf")) {
+            ipv.i <- ipv.i[ipv.i$npsvever_bf == "Ever_bf", ]  } 
+      }
+      vaw <- rbind(vaw, ipv.i) }}  
+  
       # In all cases, we remove urban/rural if national is present.
       study_id <- unique(data$ID)
       vaw_final <- NULL
@@ -518,6 +543,22 @@ age_dist_who <- function(IPV) {
         }}
     }
     return(age_dist)
+}
+
+n_studies_who <- function(IPV) {
+  who <- addition_to_cnt("who") 
+  
+  IPV$WHO <- who$region_name[match(IPV$iso3, who$iso3)]
+  IPV$WHO_HI <- who$region_name_hi[match(IPV$iso3, who$iso3)]
+  
+  n_dist <- data.frame(region = "Overall", n = length(unique(IPV$ID)), proportion = 100)
+  ureg <- unique(IPV$WHO_HI)
+  for (i in 1:length(ureg)) {
+    ipv_i <- IPV[IPV$WHO_HI == ureg[i], ]
+    n_dist_i <- data.frame(region = ureg[i], n = length(unique(ipv_i$ID)), proportion = length(unique(ipv_i$ID)) / length(unique(IPV$ID)) * 100)
+    n_dist <- rbind(n_dist, n_dist_i)
+  }
+  return(n_dist)
 }
 
 #' Process MCMC
@@ -846,7 +887,7 @@ process_lhs <- function(res_lhs) {
     res$sd_spl_c <- as.mcmc(c(res$sd_spl_c, res_lhs[[i]]$sd_spl_c))
     res$sd_t_sr <- as.mcmc(c(res$sd_t_sr, res_lhs[[i]]$sd_t_sr))   
     res$sd_t_r <- as.mcmc(c(res$sd_t_r, res_lhs[[i]]$sd_t_r))   
-    res$sd_t_c <- as.mcmc(c(res$sd_t, res_lhs[[i]]$sd_t_c))
+    res$sd_t_c <- as.mcmc(c(res$sd_t_c, res_lhs[[i]]$sd_t_c))
  
     res$linpred <- as.mcmc(c(res$linpred, res_lhs[[i]]$linpred))
     
@@ -1722,7 +1763,7 @@ plot_time_trend <- function(res, SDat, IPV, Center_t = 2018,
 }
 
 addition_to_cnt <- function(aggregate = "gbd") {
-  if (!(aggregate %in% c("gbd", "who", "sdg"))) {
+  if (!(aggregate %in% c("gbd", "who", "sdg", "unicef", "unfpa"))) {
     stop("aggregate must be gbd, who, or sdg")
   }
   
@@ -1732,27 +1773,22 @@ addition_to_cnt <- function(aggregate = "gbd") {
       addition <- data.frame(iso = c("COK", "PLW", "NRU", "TUV", "NIU",
                                  "KNA", 
                                  "MCO", "SMR",
-                                 "RKS",
                                  "HKG"),
                               NameCnt = c("Cook Islands", "Palau", "Nauru", "Tuvalu", "Niue",
                                          "Saint Kitts and Nevis",  
                                          "Monaco", "San Marino",
-                                         "Kosovo",
                                          "Hong Kong"),
                               gbd = c(rep("Oceania", 5),
                                       rep("Caribbean", 1),
                                       rep("Western Europe", 2),
-                                      rep("Central Europe", 1),
                                       rep("East Asia", 1)),
                               Region = c(rep("Oceania", 5),
                                       rep("Caribbean", 1),
                                       rep("Europe, Western", 2),
-                                      rep("Europe, Central", 1),
                                       rep("Asia, East", 1)),
                               SuperRegion = c(rep("South-East Asia, East Asia & Oceania", 5),
                                       rep("Latin America & Caribbean", 1),
                                       rep("Central Europe, Eastern Europe & Central Asia", 2),
-                                      rep("Central Europe, Eastern Europe & Central Asia", 1),
                                       rep("South-East Asia, East Asia & Oceania", 1)))
   val <- rbind(gbd, addition)   
   }
@@ -1760,16 +1796,11 @@ addition_to_cnt <- function(aggregate = "gbd") {
   if (aggregate == "who") {
       data(who)
       #already included: "Cook Islands", "Palau", "Nauru", "Tuvalu", "Niue", "Saint Kitts and Nevis", "Monaco", "San Marino",
-      addition <- data.frame(country = c("Kosovo",
-                                     "Hong Kong"),
-                         iso3 = c("RKS",
-                                 "HKG"),
-                         region = c(rep("EURO", 1),
-                                    rep("WPRO", 1)),
-                         region_name = c(rep("European Region", 1),
-                                      rep("Western Pacific Region", 1)),
-                         region_name_hi = c(rep("European Region", 1),
-                                      rep("High Income Region", 1)))
+      addition <- data.frame(country = c("Hong Kong"),
+                         iso3 = c("HKG"),
+                         region = c(rep("WPRO", 1)),
+                         region_name = c(rep("Western Pacific Region", 1)),
+                         region_name_hi = c(rep("High Income Region", 1)))
       val <- rbind(who, addition)
   }
   
@@ -1779,47 +1810,51 @@ addition_to_cnt <- function(aggregate = "gbd") {
       addition <- data.frame(cnt = c("Cook Islands", "Palau", "Nauru", "Tuvalu", "Niue",
                                          "Saint Kitts and Nevis",  
                                          "Monaco", "San Marino",
-                                         "Kosovo",
                                          "Hong Kong"),
                          iso3 = c("COK", "PLW", "NRU", "TUV", "NIU",
                                  "KNA", 
                                  "MCO", "SMR",
-                                 "RKS",
                                  "HKG"),
                          region = c(rep("Oceania", 5),
                                       rep("Americas", 1),
                                       rep("Europe", 2),
-                                      rep("Europe", 1),
                                       rep("Asia", 1)),
                          subregion = c(rep("Polynesia", 5),
                                       rep("Latin America and the Caribbean", 1),
                                       rep("Southern Europe", 2),
-                                      rep("Eastern Europe", 1),
                                       rep("Eastern Asia", 1)),
                          least_developped = c(rep(1, 5),
-                                       rep(0, 5)))
+                                       rep(0, 4)))
       val <- rbind(sdg, addition)
   }
-  
+
   return(val)
 }
 
 #' Aggregate by country
 pool_pred <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018, 
                      outcome, year_pred = 2018,
-                     all_women = FALSE) {
+                     all_women = FALSE, 
+                     extroplated_ever_sex_wgt_2018 = TRUE) {
   
     if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
       stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
 
     data("denom_cnt_age_now")
-    data("denom_ever_sex_2010")
+    if (extroplated_ever_sex_wgt_2018 == FALSE) { 
+      data("denom_ever_sex_2010")
+      print("you are using 2010 ever had sex weights")
+      denom_ever_sex <- denom_ever_sex_2010 }
+    if (extroplated_ever_sex_wgt_2018 == TRUE) {  
+      data("denom_ever_sex_2018") 
+      print("you are using 2018 ever had sex weights")
+      denom_ever_sex <- denom_ever_sex_2018 }
     data("wpp_std_now")
 
     gbd <- addition_to_cnt("gbd")
     who <- addition_to_cnt("who") 
     sdg <- addition_to_cnt("sdg")
-  
+
     n_cnt <- length(unique(IPV$cnt))
     n_reg <- length(unique(IPV$reg))
     n_sup <- length(unique(IPV$sup))
@@ -1841,8 +1876,8 @@ pool_pred <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018,
   }
   
     # Some countries don't have data on ever had sex, we take the world average
-    EverSexAvg <- aggregate(denom_ever_sex_2010$ever_had_sex,
-                            by = list(denom_ever_sex_2010$age_group), 
+    EverSexAvg <- aggregate(denom_ever_sex$ever_had_sex,
+                            by = list(denom_ever_sex$age_group), 
                             FUN = mean, na.rm = TRUE)
     colnames(EverSexAvg) <- c('age_group','ever_had_sex')
 
@@ -1979,7 +2014,7 @@ pool_pred <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018,
         # For IPV
         if (outcome != "NPSV") {
           W.i <- subset(denom_cnt_age_now, as.character(iso3) == as.character(XPred$ISO[i]))
-          EverSex.i <- subset(denom_ever_sex_2010, as.character(iso3) == as.character(XPred$ISO[i]))
+          EverSex.i <- subset(denom_ever_sex, as.character(iso3) == as.character(XPred$ISO[i]))
           if (nrow(EverSex.i) == 0) { EverSex.i <- EverSexAvg } # There are some countries without data for Ever_Had_Sex.
           if (nrow(W.i) > 0) {
             closest_age <- which.min(abs(EverSex.i$age_group - XPred$Age[i])) # b/c ever sex is only up to age 45-49.
@@ -2034,7 +2069,18 @@ pool_pred <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018,
       YP_Index$SDG <- sdg$subregion[match(YP_Index$ISO, sdg$iso3)]      
       YP_Index$SDGsup <- sdg$region[match(YP_Index$ISO, sdg$iso3)]   
       YP_Index$SDGdev <- sdg$least_developped[match(YP_Index$ISO, sdg$iso3)]   
-
+      
+    data(unicef)
+    data(unfpa)
+     YP_Index$unfpa <- unfpa$regions[match(YP_Index$ISO, unfpa$iso3)]
+     YP_Index$unicef_prg <- unicef$program_region[match(YP_Index$ISO, unicef$iso3)]
+     YP_Index$unicef_reg1 <- unicef$reporting_region1[match(YP_Index$ISO, unicef$iso3)]
+     YP_Index$unicef_reg2 <- unicef$reporting_region2[match(YP_Index$ISO, unicef$iso3)]
+     YP_Index$unfpa <- ifelse(is.na(YP_Index$unfpa), "not included", YP_Index$unfpa)
+     YP_Index$unicef_prg <- ifelse(is.na(YP_Index$unicef_prg), "not included", YP_Index$unicef_prg)     
+     YP_Index$unicef_reg1 <- ifelse(is.na(YP_Index$unicef_reg1), "not included", YP_Index$unicef_reg1) 
+     YP_Index$unicef_reg2 <- ifelse(is.na(YP_Index$unicef_reg2), "not included", YP_Index$unicef_reg2)
+     
       YPInd <- YP_Index[!duplicated(YP_Index[, -1]), ]
       
       val <- list(YPInd = YPInd, y_denom = y_denom, y_pred = y_pred)
@@ -2086,8 +2132,23 @@ pool_cnt <- function(pred, IPV, outcome,
     }
     close(pb)
 
+    AggCnt$name <- countrycode::countrycode(sourcevar = AggCnt$Country, 
+                   origin = "iso3c", destination = "un.name.en", warn = TRUE,
+                   custom_match = c(
+                     "ASM" = "American Samoa",
+                     "BMU" = "Bermuda",
+                     "COK" = "Cook Islands",
+                     "GRL" = "Greenland",
+                     "GUM" = "Guam",
+                     "HKG" = "Hong Kong (S.A.R. China)",
+                     "MNP" = "Northern Mariana Islands",
+                     "NIU" = "Niue",
+                     "PRI" = "Puerto Rico",
+                     "PSE" = "Palestinian Territory, Occupied",
+                     "TWN" = "Taiwan (Republic of China)",
+                     "VIR" = "Virgin Islands (USA)"))
     AggCnt$with_data <- ifelse(as.character(AggCnt$Country) %in% unique(IPV$iso3), "-", "No data")
-    
+
   if (save_results == TRUE) {
     write.csv(AggCnt, file = paste("Estimates Age by Cnt - ", outcome, " ", suffix, ".csv", sep = ""))
   }
@@ -2127,7 +2188,7 @@ pool_reg <- function(pred, ll_age = 15, ul_age = 49,
     D1 <- YPInd$D1[YPInd$GBD == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
-    wom.ij <- round(sum.ij) * 1000
+    wom.ij <- sum.ij * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
     RPrv.i <- data.frame(GBD = i,
@@ -2144,13 +2205,100 @@ pool_reg <- function(pred, ll_age = 15, ul_age = 49,
   rownames(RPrv) <- NULL
   RPrv_AgeStd <- RPrv
 
-  
+  RPrv_AgeStd$women <- round(RPrv_AgeStd$women / 1000, 0) * 1000
+  RPrv_AgeStd$women_lci <- round(RPrv_AgeStd$women_lci / 1000, 0) * 1000
+  RPrv_AgeStd$women_uci <- round(RPrv_AgeStd$women_uci / 1000, 0) * 1000
+    
   if (save_results == TRUE) {
     write.csv(RPrv_AgeStd , file = paste("Estimates by GBD Region (",
                                    ll_age, "-", ul_age, ") - ", outcome,
                                    " ", suffix, ".csv", sep = "")) }
   return(RPrv_AgeStd)
 }
+
+
+pool_reg_who <- function(pred, ll_age = 15, ul_age = 49,
+                     outcome, save_results = TRUE, suffix = "") {
+
+  if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
+    stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
+
+  YPInd <- pred[["YPInd"]]
+  y_denom <- pred[["y_denom"]]
+  y_pred <- pred[["y_pred"]]
+  age <- seq(17.5, 104, by = 5)
+
+  # not including high-income as a seperate category
+  RPrv <- NULL
+  R <- unique(as.character(YPInd$WHO))
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1 <- YPInd$D1[YPInd$WHO == i]
+    # Prevalence in age group
+    sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
+    wom.ij <- sum.ij * 1000    
+    denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
+    RPrv.ij <- sum.ij / denom.ij
+    RPrv.i <- data.frame(WHO = i,
+                        Median = quantile(RPrv.ij, probs = 0.5),
+                        LCI = quantile(RPrv.ij, probs = 0.025),
+                        UCI = quantile(RPrv.ij, probs = 0.975),
+                        women = quantile(wom.ij, probs = 0.5),
+                        women_lci = quantile(wom.ij, probs = 0.025),
+                        women_uci = quantile(wom.ij, probs = 0.975))
+  RPrv <- rbind(RPrv, RPrv.i)
+  setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(RPrv) <- NULL
+  RPrv_AgeStd <- RPrv
+  
+  RPrv_AgeStd$women <- round(RPrv_AgeStd$women / 1000, 0) * 1000
+  RPrv_AgeStd$women_lci <- round(RPrv_AgeStd$women_lci / 1000, 0) * 1000
+  RPrv_AgeStd$women_uci <- round(RPrv_AgeStd$women_uci / 1000, 0) * 1000
+  
+  if (save_results == TRUE) {
+    write.csv(RPrv_AgeStd , file = paste("Estimates by WHO Regions (",
+                                   ll_age, "-", ul_age, ") - ", outcome,
+                                   " ", suffix, ".csv", sep = "")) }
+
+
+  # including high-income as a separate category
+  RPrv <- NULL
+  R <- unique(as.character(YPInd$WHO_HI))
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1 <- YPInd$D1[YPInd$WHO_HI == i]
+    # Prevalence in age group
+    sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
+    wom.ij <- sum.ij * 1000
+    denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
+    RPrv.ij <- sum.ij / denom.ij
+    RPrv.i <- data.frame(WHO_HI = i,
+                        Median = quantile(RPrv.ij, probs = 0.5),
+                        LCI = quantile(RPrv.ij, probs = 0.025),
+                        UCI = quantile(RPrv.ij, probs = 0.975),
+                        women = quantile(wom.ij, probs = 0.5),
+                        women_lci = quantile(wom.ij, probs = 0.025),
+                        women_uci = quantile(wom.ij, probs = 0.975))
+  RPrv <- rbind(RPrv, RPrv.i)
+  setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(RPrv) <- NULL
+  RPrv_AgeStd <- RPrv
+
+  RPrv_AgeStd$women <- round(RPrv_AgeStd$women / 1000, 0) * 1000
+  RPrv_AgeStd$women_lci <- round(RPrv_AgeStd$women_lci / 1000, 0) * 1000
+  RPrv_AgeStd$women_uci <- round(RPrv_AgeStd$women_uci / 1000, 0) * 1000
+  
+  if (save_results == TRUE) {
+    write.csv(RPrv_AgeStd , file = paste("Estimates by WHO & Regions High Income (",
+                                   ll_age, "-", ul_age, ") - ", outcome,
+                                   " ", suffix, ".csv", sep = "")) }
+  return(RPrv_AgeStd)
+}
+
 
 pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
                      outcome, save_results = TRUE, suffix = "") {
@@ -2170,7 +2318,7 @@ pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
     D1 <- YPInd$D1[YPInd$SDG == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
-    wom.ij <- round(sum.ij) * 1000
+    wom.ij <- sum.ij * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
   RPrv.i <- data.frame(SDG = i,
@@ -2195,7 +2343,7 @@ pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
     D1 <- YPInd$D1[YPInd$SDGsup == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
-    wom.ij <- round(sum.ij) * 1000
+    wom.ij <- sum.ij * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
     RPrv.i <- data.frame(SDG_SuperRegion = i,
@@ -2219,7 +2367,7 @@ pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
     D1 <- YPInd$D1[YPInd$SDGdev == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
-    wom.ij <- round(sum.ij) * 1000
+    wom.ij <- sum.ij * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
     RPrv.i <- data.frame(Least_Developped = i,
@@ -2236,14 +2384,26 @@ pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
   rownames(RPrv) <- NULL
   SDGdev_AgeStd <- RPrv
   
+  RPrv_AgeStd$women <- round(RPrv_AgeStd$women / 1000, 0) * 1000
+  RPrv_AgeStd$women_lci <- round(RPrv_AgeStd$women_lci / 1000, 0) * 1000
+  RPrv_AgeStd$women_uci <- round(RPrv_AgeStd$women_uci / 1000, 0) * 1000
+  
+  SDGsup_AgeStd$women <- round(SDGsup_AgeStd$women / 1000, 0) * 1000
+  SDGsup_AgeStd$women_lci <- round(SDGsup_AgeStd$women_lci / 1000, 0) * 1000
+  SDGsup_AgeStd$women_uci <- round(SDGsup_AgeStd$women_uci / 1000, 0) * 1000
+  
+  SDGdev_AgeStd$women <- round(SDGdev_AgeStd$women / 1000, 0) * 1000
+  SDGdev_AgeStd$women_lci <- round(SDGdev_AgeStd$women_lci / 1000, 0) * 1000
+  SDGdev_AgeStd$women_uci <- round(SDGdev_AgeStd$women_uci / 1000, 0) * 1000
+  
   if (save_results == TRUE) {
-    write.csv(RPrv_AgeStd , file = paste("Estimates by SDG Regions (",
+    write.csv(RPrv_AgeStd, file = paste("Estimates by SDG Regions (",
                                    ll_age, "-", ul_age, ") - ", outcome,
                                    " ", suffix, ".csv", sep = ""))
-    write.csv(SDGsup_AgeStd , file = paste("Estimates by SDG Super Regions (",
+    write.csv(SDGsup_AgeStd, file = paste("Estimates by SDG Super Regions (",
                                    ll_age, "-", ul_age, ") - ", outcome,
                                    " ", suffix, ".csv", sep = ""))
-    write.csv(SDGdev_AgeStd , file = paste("Estimates by SDG Least-Developped (",
+    write.csv(SDGdev_AgeStd, file = paste("Estimates by SDG Least-Developped (",
                                    ll_age, "-", ul_age, ") - ", outcome,
                                    " ", suffix, ".csv", sep = ""))
   }
@@ -2251,8 +2411,8 @@ pool_reg_sdg <- function(pred, ll_age = 15, ul_age = 49,
   return(RPrv_AgeStd)
 }
 
-pool_reg_who <- function(pred, ll_age = 15, ul_age = 49,
-                     outcome, save_results = TRUE, suffix = "") {
+pool_reg_unicef <- function(pred, ll_age = 15, ul_age = 49,
+                            outcome, save_results = TRUE, suffix = "") {
 
   if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
     stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
@@ -2262,18 +2422,48 @@ pool_reg_who <- function(pred, ll_age = 15, ul_age = 49,
   y_pred <- pred[["y_pred"]]
   age <- seq(17.5, 104, by = 5)
 
-  # not including high-income as a seperate category
   RPrv <- NULL
-  R <- unique(as.character(YPInd$WHO))
+  R <- unique(YPInd$unicef_prg)
+  R <- R[-which(R == "not included")]
   pb <- txtProgressBar(1, length(R), style = 3)
   for (i in R) {
-    D1 <- YPInd$D1[YPInd$WHO == i]
+    D1 <- YPInd$D1[YPInd$unicef_prg == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
-    wom.ij <- round(sum.ij) * 1000    
+    wom.ij <- sum.ij * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
-    RPrv.i <- data.frame(WHO = i,
+    RPrv.i <- data.frame(program_region = i,
+                        Median = quantile(RPrv.ij, probs = 0.5),
+                        LCI = quantile(RPrv.ij, probs = 0.025),
+                        UCI = quantile(RPrv.ij, probs = 0.975),
+                        women = quantile(wom.ij, probs = 0.5),
+                        women_lci = quantile(wom.ij, probs = 0.025),
+                        women_uci = quantile(wom.ij, probs = 0.975))
+    RPrv <- rbind(RPrv, RPrv.i)
+    setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(RPrv) <- NULL
+  RPrv_program_region <- RPrv
+
+  RPrv_program_region$women <- round(RPrv_program_region$women / 1000, 0) * 1000
+  RPrv_program_region$women_lci <- round(RPrv_program_region$women_lci / 1000, 0) * 1000
+  RPrv_program_region$women_uci <- round(RPrv_program_region$women_uci / 1000, 0) * 1000
+  
+  # super region SDG
+  RPrv <- NULL
+  R <- unique(YPInd$unicef_reg1)
+  R <- R[-which(R == "not included")]
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1 <- YPInd$D1[YPInd$unicef_reg1 == i]
+    # Prevalence in age group
+    sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
+    wom.ij <- sum.ij * 1000
+    denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
+    RPrv.ij <- sum.ij / denom.ij
+    RPrv.i <- data.frame(reporting_region1 = i,
                         Median = quantile(RPrv.ij, probs = 0.5),
                         LCI = quantile(RPrv.ij, probs = 0.025),
                         UCI = quantile(RPrv.ij, probs = 0.975),
@@ -2285,26 +2475,24 @@ pool_reg_who <- function(pred, ll_age = 15, ul_age = 49,
   }
   close(pb)
   rownames(RPrv) <- NULL
-  RPrv_AgeStd <- RPrv
+  RPrv_reporting_region1 <- RPrv
 
-  if (save_results == TRUE) {
-    write.csv(RPrv_AgeStd , file = paste("Estimates by WHO Regions (",
-                                   ll_age, "-", ul_age, ") - ", outcome,
-                                   " ", suffix, ".csv", sep = "")) }
-
-
-  # including high-income as a separate category
+  RPrv_reporting_region1$women <- round(RPrv_reporting_region1$women / 1000, 0) * 1000
+  RPrv_reporting_region1$women_lci <- round(RPrv_reporting_region1$women_lci / 1000, 0) * 1000
+  RPrv_reporting_region1$women_uci <- round(RPrv_reporting_region1$women_uci / 1000, 0) * 1000
+  
   RPrv <- NULL
-  R <- unique(as.character(YPInd$WHO_HI))
+  R <- unique(YPInd$unicef_reg2)
+  R <- R[-which(R == "not included")]
   pb <- txtProgressBar(1, length(R), style = 3)
   for (i in R) {
-    D1 <- YPInd$D1[YPInd$WHO_HI == i]
+    D1 <- YPInd$D1[YPInd$unicef_reg2 == i]
     # Prevalence in age group
     sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
     wom.ij <- round(sum.ij) * 1000
     denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
     RPrv.ij <- sum.ij / denom.ij
-    RPrv.i <- data.frame(WHO_HI = i,
+    RPrv.i <- data.frame(reporting_region2 = i,
                         Median = quantile(RPrv.ij, probs = 0.5),
                         LCI = quantile(RPrv.ij, probs = 0.025),
                         UCI = quantile(RPrv.ij, probs = 0.975),
@@ -2316,15 +2504,75 @@ pool_reg_who <- function(pred, ll_age = 15, ul_age = 49,
   }
   close(pb)
   rownames(RPrv) <- NULL
-  RPrv_AgeStd <- RPrv
+  RPrv_reporting_region2 <- RPrv
 
+  RPrv_reporting_region2$women <- round(RPrv_reporting_region2$women / 1000, 0) * 1000
+  RPrv_reporting_region2$women_lci <- round(RPrv_reporting_region2$women_lci / 1000, 0) * 1000
+  RPrv_reporting_region2$women_uci <- round(RPrv_reporting_region2$women_uci / 1000, 0) * 1000
+  
   if (save_results == TRUE) {
-    write.csv(RPrv_AgeStd , file = paste("Estimates by WHO & Regions High Income (",
+    write.csv(RPrv_program_region , file = paste("Estimates by UNICEF Program Regions (",
                                    ll_age, "-", ul_age, ") - ", outcome,
-                                   " ", suffix, ".csv", sep = "")) }
-  return(RPrv_AgeStd)
+                                   " ", suffix, ".csv", sep = ""))
+    write.csv(RPrv_reporting_region1 , file = paste("Estimates by UNICEF Reporting 1 Regions (",
+                                   ll_age, "-", ul_age, ") - ", outcome,
+                                   " ", suffix, ".csv", sep = ""))
+    write.csv(RPrv_reporting_region2 , file = paste("Estimates by UNICEF Reporting 2 Regions (",
+                                   ll_age, "-", ul_age, ") - ", outcome,
+                                   " ", suffix, ".csv", sep = ""))
+  }
+  
+  return(RPrv_program_region)
 }
 
+pool_reg_unfpa <- function(pred, ll_age = 15, ul_age = 49,
+                           outcome, save_results = TRUE, suffix = "") {
+
+  if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
+    stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
+
+  YPInd <- pred[["YPInd"]]
+  y_denom <- pred[["y_denom"]]
+  y_pred <- pred[["y_pred"]]
+  age <- seq(17.5, 104, by = 5)
+
+  RPrv <- NULL
+  R <- unique(YPInd$unfpa)
+  R <- R[-which(R == "not included")]
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1 <- YPInd$D1[YPInd$unfpa == i]
+    # Prevalence in age group
+    sum.ij <- colSums(colSums(y_pred[D1, which(age >= ll_age & age <= ul_age), ]))
+    wom.ij <- sum.ij * 1000
+    denom.ij <- sum(colSums(y_denom[D1, which(age >= ll_age & age <= ul_age)]))
+    RPrv.ij <- sum.ij / denom.ij
+    RPrv.i <- data.frame(unfpa = i,
+                        Median = quantile(RPrv.ij, probs = 0.5),
+                        LCI = quantile(RPrv.ij, probs = 0.025),
+                        UCI = quantile(RPrv.ij, probs = 0.975),
+                        women = quantile(wom.ij, probs = 0.5),
+                        women_lci = quantile(wom.ij, probs = 0.025),
+                        women_uci = quantile(wom.ij, probs = 0.975))
+    RPrv <- rbind(RPrv, RPrv.i)
+    setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(RPrv) <- NULL
+  RPrv_unfpa <- RPrv
+
+  RPrv_unfpa$women <- round(RPrv_unfpa$women / 1000, 0) * 1000
+  RPrv_unfpa$women_lci <- round(RPrv_unfpa$women_lci / 1000, 0) * 1000
+  RPrv_unfpa$women_uci <- round(RPrv_unfpa$women_uci / 1000, 0) * 1000
+  
+  if (save_results == TRUE) {
+    write.csv(RPrv_unfpa, file = paste("Estimates by UNFPA Regions (",
+                                   ll_age, "-", ul_age, ") - ", outcome,
+                                   " ", suffix, ".csv", sep = ""))
+  }
+  
+  return(RPrv_unfpa)
+}
 
 pool_glb <- function(pred, ll_age = 15, ul_age = 49, outcome,
                      cnt_exclude = NULL, suffix, save_results = TRUE) {
@@ -2387,7 +2635,29 @@ pool_glb <- function(pred, ll_age = 15, ul_age = 49, outcome,
   }
   close(pb)
 
-  val <- rbind(broad_prev, prv_age_stat)
+  age_grp_lb <- seq(15, 55, by = 10) 
+  age_grp_ub <- seq(24, 64, by = 10)
+
+  prv_age_stat_10yr <- NULL
+  pb <- txtProgressBar(1, length(age_grp_lb), style = 3)
+  for (i in 1:length(age_grp_lb)) {
+    sum_age.i <- colSums(y_pred[ , which(age >= age_grp_lb[i] & age <= age_grp_ub[i]), ])
+    wom_age.i <- sum_age.i
+    denom_age.i <- sum(y_denom[ , which(age >= age_grp_lb[i] & age <= age_grp_ub[i])])
+    if (!is.null(nrow(sum_age.i))) {  sum_age.i <- colSums(sum_age.i) 
+                                      wom_age.i <- sum_age.i }
+    if (!is.null(nrow(denom_age.i))) { denom_age.i <- sum(denom_age.i) }
+    prev <- quantile(sum_age.i / denom_age.i, probs = c(0.5, 0.025, 0.975))
+    women <- quantile(wom_age.i,  probs = c(0.5, 0.025, 0.975))
+    prev_age.i <- data.frame(age_grp = paste(age_grp_lb[i], "-", age_grp_ub[i], sep = ""),
+                             median = prev[1], lci = prev[2], uci = prev[3],
+                             women = women[1], women_lci = women[2], women_uci = women[3])
+    prv_age_stat_10yr <- rbind(prv_age_stat_10yr, prev_age.i)
+    setTxtProgressBar(pb, i)
+  }
+  close(pb)
+  
+  val <- rbind(broad_prev, prv_age_stat, prv_age_stat_10yr)
   val$women <- round(val$women) * 1000
   val$women_lci <- round(val$women_lci) * 1000
   val$women_uci <- round(val$women_uci) * 1000
@@ -2407,13 +2677,21 @@ pool_glb <- function(pred, ll_age = 15, ul_age = 49, outcome,
 
 #' Aggregate by country AND time
 pool_pred_time <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018, outcome,
-                           save_results = TRUE, suffix = "", max_iter = 1e5, age_grp = "15-49") {
+                           save_results = TRUE, suffix = "", max_iter = 1e5, age_grp = "15-49",
+                           extroplated_ever_sex_wgt_2018 = TRUE) {
 
   if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
     stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
 
   data("denom_cnt_age_now")
-  data("denom_ever_sex_2010")
+    if (extroplated_ever_sex_wgt_2018 == FALSE) { 
+      data("denom_ever_sex_2010")
+      print("you are using 2010 ever had sex weights")
+      denom_ever_sex <- denom_ever_sex_2010 }
+    if (extroplated_ever_sex_wgt_2018 == TRUE) {  
+      data("denom_ever_sex_2018") 
+      print("you are using 2018 ever had sex weights")
+      denom_ever_sex <- denom_ever_sex_2018 }
   data("wpp_std_now")
 
   n_cnt <- length(unique(IPV$cnt))
@@ -2425,8 +2703,8 @@ pool_pred_time <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018, outco
   sdg <- addition_to_cnt("sdg")
 
   # Some countries don't have data on ever had sex, we take the world average
-  EverSexAvg <- aggregate(denom_ever_sex_2010$ever_had_sex,
-                          by = list(denom_ever_sex_2010$age_group), FUN = mean, na.rm = TRUE)
+  EverSexAvg <- aggregate(denom_ever_sex$ever_had_sex,
+                          by = list(denom_ever_sex$age_group), FUN = mean, na.rm = TRUE)
   colnames(EverSexAvg) <- c('age_group','ever_had_sex')
 
   if (!(age_grp %in% c("15+", "15-49"))) { 
@@ -2596,7 +2874,7 @@ pool_pred_time <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018, outco
         # For IPV
         if (outcome != "NPSV") {
           W.i <- subset(denom_cnt_age_now, as.character(iso3) == as.character(XPred$ISO[i]))
-          EverSex.i <- subset(denom_ever_sex_2010, as.character(iso3) == as.character(XPred$ISO[i]))
+          EverSex.i <- subset(denom_ever_sex, as.character(iso3) == as.character(XPred$ISO[i]))
           if (nrow(EverSex.i) == 0) { EverSex.i <- EverSexAvg } # There are some countries without data for Ever_Had_Sex.
           if (nrow(W.i) > 0) {
             closest_age <- which.min(abs(EverSex.i$age_group - XPred$Age[i])) # b/c ever sex is only up to age 45-49.
@@ -2676,6 +2954,22 @@ pool_pred_time <- function(res, SDat, IPV, Center_a = 30, Center_t = 2018, outco
       }
       close(pb)
 
+      AggCntTime$name <- countrycode::countrycode(sourcevar = AggCntTime$Country, 
+                   origin = "iso3c", destination = "un.name.en", warn = TRUE,
+                   custom_match = c(
+                     "ASM" = "American Samoa",
+                     "BMU" = "Bermuda",
+                     "COK" = "Cook Islands",
+                     "GRL" = "Greenland",
+                     "GUM" = "Guam",
+                     "HKG" = "Hong Kong (S.A.R. China)",
+                     "MNP" = "Northern Mariana Islands",
+                     "NIU" = "Niue",
+                     "PRI" = "Puerto Rico",
+                     "PSE" = "Palestinian Territory, Occupied",
+                     "TWN" = "Taiwan (Republic of China)",
+                     "VIR" = "Virgin Islands (USA)"))
+          
     if (save_results == TRUE) {
       write.csv(AggCntTime, file = paste("Estimates Age-Cnt-Time - ", outcome, " ", suffix, ".csv", sep = ""))
     }
@@ -2947,13 +3241,13 @@ plot_agg_cnt_time <- function(agg_cnt_time, IPV, outcome, suffix = "") {
           y = c(Pred.i$LCI, rev(Pred.i$UCI)), col = ColT[a], border = NA)
 
         if (nrow(Data_not_gs) > 0) { 
-          for (j in 1:nrow(Data_not_gs))
+          for (j in 1:nrow(Data_not_gs)) { 
           col_sub <- ifelse(Data_not_gs$geo == "National", Col[1], "darkseagreen4") 
           points(Data_not_gs$Prv[j] ~ Data_not_gs$Time[j], pch = 3, col = col_sub)
           segments(x0 = Data_not_gs$Time[j], y0 = Data_not_gs$LCI[j], 
                    x1 = Data_not_gs$Time[j], y1 = Data_not_gs$UCI[j], 
                    col = col_sub, lwd = 1)
-        }
+        }}
         
         if (dim(Data.i)[1] < 1) { next }
         for (j in 1:dim(Data.i)[1]) {
@@ -2992,7 +3286,7 @@ plot_agg_cnt_time <- function(agg_cnt_time, IPV, outcome, suffix = "") {
       Pred.i <- subset(agg_cnt_time, as.character(ISO) == as.character(C_wdata[i]))
       time_lim <- c(2000, 2019.25)
       country_title <- Data.all.i$country[1]
-      if (country_title == "DEMOCRATIC REPUBLIC OF THE CONGO") { country_title <- "DRC" }
+      if (country_title == "DEMOCRATIC REPUBLIC OF THE CONGO") { country_title <- "DR CONGO" }
       if (country_title == "COTE D'IVOIRE") { country_title <- "CÔTE D'IVOIRE" }
       if (country_title == "CENTRAL AFRICAN REPUBLIC") { country_title <- "CAR" }
       plot(Pred.i$Median ~ Pred.i$Time,
@@ -3002,13 +3296,13 @@ plot_agg_cnt_time <- function(agg_cnt_time, IPV, outcome, suffix = "") {
         y = c(Pred.i$LCI, rev(Pred.i$UCI)), col = ColT[a], border = NA)
 
       if (nrow(Data_not_gs) > 0) { 
-          for (j in 1:nrow(Data_not_gs))
+          for (j in 1:nrow(Data_not_gs)) { 
           col_sub <- ifelse(Data_not_gs$geo == "National", Col[1], "darkseagreen4") 
           points(Data_not_gs$Prv[j] ~ Data_not_gs$Time[j], pch = 3, col = col_sub)
           segments(x0 = Data_not_gs$Time[j], y0 = Data_not_gs$LCI[j], 
                    x1 = Data_not_gs$Time[j], y1 = Data_not_gs$UCI[j], 
                    col = col_sub, lwd = 1)
-          }
+          }}
  
         if (nrow(Data.i) < 1) { next }     
         for (j in 1:dim(Data.i)[1]) {
@@ -3257,14 +3551,26 @@ heatmap_vaw <- function(agg_cnt, cnt_var = "cnt", outcome = "", suffix = "",
 
 #' Wolrd Map Results.
 world_map_prv <- function(agg_cnt, ipv, age_grp = "15-49", outcome = "Ever IPV", 
-                          width = 11, height = 8.5, suffix = "", watermark = FALSE) {
+                          width = 11, height = 8.5, suffix = "", watermark = FALSE,
+                          new_proj = TRUE) {
     require(magrittr)
     if (!(outcome %in% c("Ever IPV", "Past Year IPV", "NPSV"))) {
     stop("Outcome must be 'Ever IPV', 'Past Year IPV', or 'NPSV'") }
   
-    data(world_map)
-    data("who_lines")
-    data("who_poly")
+    if (new_proj == FALSE) {
+      data("world_map")
+      data("who_lines")
+      data("who_poly") 
+    }
+    if (new_proj == TRUE) {
+      data("world_map_proj")
+      data("who_lines_proj")
+      data("who_poly_proj") 
+      world_map <- world_map_proj
+      who_lines <- who_lines_proj
+      who_poly <- who_poly_proj      
+    }  
+
     world_map$ISO_A3 <- world_map$iso3
     map <- world_map
     
@@ -3273,10 +3579,15 @@ world_map_prv <- function(agg_cnt, ipv, age_grp = "15-49", outcome = "Ever IPV",
     agg <- subset(agg_cnt, agerange == age_grp)
     agg$cnt <- agg$Country
     
-      agg_qtl <- quantile(agg$median, probs = seq(0.1, 1, by = 0.1))
-      agg_qtl_name <- round(agg_qtl, 0)
-      agg_qtl_name <- c(paste(0, "-", agg_qtl_name[1] - 0.1, "%", sep = ""),
-                        paste(agg_qtl_name[1:(length(agg_qtl_name) - 1)], "-", agg_qtl_name[-1] - 0.1, "%", sep = ""))
+      #agg_qtl <- quantile(agg$median, probs = seq(0.1, 1, by = 0.1))
+      #agg_qtl_name <- round(agg_qtl, 0)
+      #agg_qtl_name <- c(paste(0, "-", agg_qtl_name[1] - 0.1, "%", sep = ""),
+      #                  paste(agg_qtl_name[1:(length(agg_qtl_name) - 1)], "-", agg_qtl_name[-1] - 0.1, "%", sep = ""))
+      agg_qtl <- unique(c(seq(10, 40, by = 5), 100))
+      agg_qtl_name <- agg_qtl
+      agg_qtl_name <- c(paste(0, "-", agg_qtl_name[1] - 1, "%", sep = ""),
+                        paste(agg_qtl_name[1:(length(agg_qtl_name) - 2)], "-", agg_qtl_name[-c(1, length(agg_qtl_name))] - 1, "%", sep = ""),
+                        paste("\u2265", agg_qtl_name[(length(agg_qtl_name) - 1)], "%", sep =""))
       agg <- agg %>%
       # convert state to factor and reverse order of levels
       plyr::mutate(cnt = factor(cnt, levels = rev(sort(unique(cnt))))) %>%
@@ -3287,16 +3598,34 @@ world_map_prv <- function(agg_cnt, ipv, age_grp = "15-49", outcome = "Ever IPV",
       # change level order
       plyr::mutate(median_cat = factor(as.character(median_cat), levels = rev(levels(median_cat)))) 
 
+  if (outcome == "Past Year IPV") {
+      agg_qtl <- c(seq(5, 25, by = 5), 100)
+      agg_qtl_name <- agg_qtl
+      agg_qtl_name <- c(paste(0, "-", agg_qtl_name[1] - 1, "%", sep = ""),
+                        paste(agg_qtl_name[1:(length(agg_qtl_name) - 2)], "-", agg_qtl_name[-c(1, length(agg_qtl_name))] - 1, "%", sep = ""),
+                        paste("\u2265", agg_qtl_name[(length(agg_qtl_name) - 1)], "%", sep =""))
+      agg <- agg %>%
+      # convert state to factor and reverse order of levels
+      plyr::mutate(cnt = factor(cnt, levels = rev(sort(unique(cnt))))) %>%
+      # create a new variable from count
+      plyr::mutate(median_cat = cut(median, 
+                   breaks = c(0, agg_qtl),
+                   labels = agg_qtl_name)) %>%
+      # change level order
+      plyr::mutate(median_cat = factor(as.character(median_cat), levels = rev(levels(median_cat)))) 
+    
+  }      
+      
   if (outcome == "NPSV") {
       agg <- agg %>%
       # convert state to factor and reverse order of levels
       plyr::mutate(cnt = factor(cnt, levels = rev(sort(unique(cnt))))) %>%
       # create a new variable from count
       plyr::mutate(median_cat = cut(median, 
-                   breaks = c(0, 2.5, 5, 7.5, 10, 12.5, 15, 100),
-                   labels = c("<2.5%", "2.5-4.9%", "5.0-7.4%", "7.5-9.9%", "10-12.4%", "12.5-14.9%",
-                              "15.0-100%"))) %>%
-      # change level order
+                   breaks = c(0, 2, 4, 6, 9, 12, 100),
+                   labels = c("<2%", "2-3%", "4-5%", "6-8%", "9-11%",
+                              "\u2265 12%"))) %>%
+      # change level order (\u2265 not working for bigger equal)
       plyr::mutate(median_cat = factor(as.character(median_cat), levels = rev(levels(median_cat)))) 
   }
   
@@ -3316,7 +3645,7 @@ world_map_prv <- function(agg_cnt, ipv, age_grp = "15-49", outcome = "Ever IPV",
                         ggplot2::aes(x = long, y = lat, map_id = id, group = group))
     gg <- gg + ggplot2::geom_map(data = agg, map = map, color = "white", size = 0.15,
                         ggplot2::aes(fill = median_cat, group = Country, map_id = Country))
-    gg <- gg + ggplot2::scale_fill_manual(values = pal, name = "Median Prevalence (%)")
+    gg <- gg + ggplot2::scale_fill_manual(values = pal, name = "Median prevalence (%)")
     gg <- gg + ggplot2::geom_map(data = who_poly, map = who_poly, fill = "white", color = NA,
                         ggplot2::aes(x = long, y = lat, map_id = id))
     gg <- gg + ggplot2::geom_path(data = who_lines, color = "grey85", size = 0.35, 
@@ -3338,8 +3667,10 @@ world_map_prv <- function(agg_cnt, ipv, age_grp = "15-49", outcome = "Ever IPV",
             fontface = "bold", alpha = 0.25)
     }
     
-    ggplot2::ggsave(filename = paste("Map. Prevalence - ", outcome, " ", suffix, ".pdf", sep = ""),
-           device = "pdf",  width = width, height = height)
+    #require(Cairo)
+    ggplot2::ggsave(filename = paste("Map. Prevalence - ", outcome, " ", suffix, ".png", sep = ""),
+           plot = gg, device = "png", dpi = 500, units = "in",
+           width = width, height = height)
 
     print(gg) 
 }
@@ -3479,7 +3810,135 @@ prv_plot_reg <- function(agg_reg, IPV, age_grp = "15-49", outcome = "Ever IPV", 
     dev.off()
 }
 
+plot_global_trend <- function(ever_trend, past_trend, width = 6, height = 5, ylim = c(0, 50)) {
 
+  ever_trend$outcome <- "ever ipv"
+  past_trend$outcome <- "past ipv"
+  
+  trend_ <- rbind(ever_trend, past_trend)
+  slope_id <- which(trend_$Time == "2000 to 2018")
+  slope <- trend_[slope_id, ]
+  print(slope)
+  est_2000_2018 <- which(trend_$Time != "2000 to 2018" & trend_$Time != "2019")
+  trend <- trend_[est_2000_2018, ]
+  trend$year <- as.numeric(as.character(trend$Time))
+  trend$median <- trend$Median * 100
+  trend$lci <- trend$LCI * 100
+  trend$uci <- trend$UCI * 100
+  trend_ever <- subset(trend, outcome == "ever ipv")
+  trend_past <- subset(trend, outcome == "past ipv")
+  
+  png("global_time_trend.png", width, height, unit = "in", res = 400)
+  par(mfrow = c(1, 1), family = "sans", yaxs = "i", yaxs = "i", oma = c(0, 0, 0, 0), mar = c(4, 4, 2, 0))
+  
+  plot(trend_past$median ~ trend_past$year, type = 'n', axes = FALSE, yaxs = "i", xaxs = "i",
+       xlim = c(2000, 2019), ylim = ylim, xlab = "Year", ylab = "Standardized prevalence (%)")
+  axis(1, at = seq(2000, 2020, by = 5), labels = seq(2000, 2020, by = 5), las = 1)
+  axis(2, at = seq(0, ylim[2], by = 10), labels = seq(0, ylim[2], by = 10), las = 1)
+  #abline(h = seq(0, 100, by = 10), col = "lightgray", lwd = 0.5)
+      # past
+      polygon(x = c(trend_past$year, rev(trend_past$year)),
+        y = c(trend_past$lci, rev(trend_past$uci)),
+        col = scales::alpha("#E44253", 0.5), border = NA)
+      lines(trend_past$median ~ trend_past$year, lwd = 1, col = scales::alpha("#E44253", 1))
+      # ever
+      polygon(x = c(trend_ever$year, rev(trend_ever$year)),
+        y = c(trend_ever$lci, rev(trend_ever$uci)),
+        col = scales::alpha("#90C4AA", 0.5), border = NA)
+      lines(trend_ever$median ~ trend_ever$year, lwd = 1, col = scales::alpha("#90C4AA", 1))
+     
+      # segments(x0 = trend_past$year + 0.1, y0 = trend_past$lci,
+      #          x1 = trend_past$year + 0.1, y1 = trend_past$uci,
+      #          col = scales::alpha("#E44253", 0.75), lwd = 2)
+      # points(trend_past$median ~ I(trend_past$year + 0.1), pch = 19, cex = 0.6,
+      #        col = scales::alpha("#E44253", 1))
+      # # ever
+      # segments(x0 = trend_ever$year - 0.1, y0 = trend_ever$lci,
+      #          x1 = trend_ever$year - 0.1, y1 = trend_ever$uci,
+      #          col = scales::alpha("#90C4AA", 0.75), lwd = 2)
+      # points(trend_ever$median ~ I(trend_ever$year - 0.1), pch = 19, cex = 0.6,
+      #       col = scales::alpha("#90C4AA", 1))
+      
+  legend("topright", lwd = 3, col =  c(scales::alpha("#90C4AA", 1), scales::alpha("#E44253", 1)),
+         legend = c("Lifetime", "Past year"), bty = "n")
+  dev.off()
+  
+}
+
+plot_global_age <- function(ever_age, past_age, width = 3, height = 4, ylim = c(0, 50)) {
+  ever_age$outcome <- "ever ipv"
+  past_age$outcome <- "past ipv"
+  
+  trend_ <- rbind(ever_age, past_age)
+  trend_$age <- ifelse(trend_$age_grp == "15-19", 17.5,
+                ifelse(trend_$age_grp == "20-24", 22.5,
+                ifelse(trend_$age_grp == "25-29", 27.5,
+                ifelse(trend_$age_grp == "30-34", 32.5,
+                ifelse(trend_$age_grp == "35-39", 37.5,
+                ifelse(trend_$age_grp == "40-44", 42.5,
+                ifelse(trend_$age_grp == "45-49", 47.5,
+                ifelse(trend_$age_grp == "50-54", 52.5,
+                ifelse(trend_$age_grp == "55-59", 57.5,
+                ifelse(trend_$age_grp == "60-64", 62.5, 
+                ifelse(trend_$age_grp == "15+", 70, NA)))))))))))
+  trend <- trend_[!(trend_$age_grp %in% c("15-49", "15+", "65-104")), ]
+  trend <- trend[order(trend$age), ]
+  trend$median <- trend$median * 100
+  trend$lci <- trend$lci * 100
+  trend$uci <- trend$uci * 100
+  trend_ever <- subset(trend, outcome == "ever ipv")
+  trend_past <- subset(trend, outcome == "past ipv")
+  
+  png("global_age_trend.png", width, height, unit = "in", res = 600)
+  par(mfrow = c(1, 1), family = "sans", yaxs = "i", yaxs = "i", oma = c(0, 0, 0, 0), mar = c(4, 4, 2, 0))
+  
+  plot(trend_past$median ~ trend_past$age, type = 'n', axes = FALSE, yaxs = "i", xaxs = "i",
+      xlim = c(17.5, 65), ylim = ylim, xlab = "Age groups", ylab = "Prevalence in 2018 (%)")
+  axis(1, at = trend_past$age[order(trend_past$age)], 
+       labels = trend_past$age_grp[order(trend_past$age)], las = 2, cex.axis = 0.8)
+  axis(2, at = seq(0, ylim[2], by = 10), labels = seq(0, ylim[2], by = 10), las = 1)
+  #abline(h = seq(0, 100, by = 10), col = "lightgray", lwd = 0.5)
+      # past
+      polygon(x = c(trend_past$age, rev(trend_past$age)),
+        y = c(trend_past$lci, rev(trend_past$uci)),
+        col = scales::alpha("#E44253", 0.5), border = NA)
+      lines(trend_past$median ~ trend_past$age, lwd = 1, col = scales::alpha("#E44253", 1))
+      # ever
+      polygon(x = c(trend_ever$age, rev(trend_ever$age)),
+        y = c(trend_ever$lci, rev(trend_ever$uci)),
+        col = scales::alpha("#90C4AA", 0.5), border = NA)
+      lines(trend_ever$median ~ trend_ever$age, lwd = 1, col = scales::alpha("#90C4AA", 1))
+
+  legend("topright", lwd = 3, col = c(scales::alpha("#90C4AA", 1), scales::alpha("#E44253", 1)),
+         legend = c("Lifetime", "Past year"), bty = "n")
+  dev.off()
+  
+  png("global_age_trend_points.png", width, height, unit = "in", res = 600)
+  par(mfrow = c(1, 1), family = "sans", yaxs = "i", yaxs = "i", oma = c(0, 0, 0, 0), mar = c(4, 4, 2, 0))
+  
+  plot(trend_past$median ~ trend_past$age, type = 'n', axes = FALSE, yaxs = "i", xaxs = "i",
+      xlim = c(15, 65), ylim = ylim, xlab = "Age groups", ylab = "Prevalence (%)")
+  axis(1, at = c(15, trend_past$age[order(trend_past$age)]), 
+       labels = c(NA, trend_past$age_grp[order(trend_past$age)]), las = 2, cex.axis = 0.8)
+  axis(2, at = seq(0, ylim[2], by = 10), labels = seq(0, ylim[2], by = 10), las = 1)
+  #abline(h = seq(0, 100, by = 10), col = "lightgray", lwd = 0.5)
+      # past
+      segments(x0 = trend_past$age + 0.3, y0 = trend_past$lci,
+               x1 = trend_past$age + 0.3, y1 = trend_past$uci,
+               col = scales::alpha("#E44253", 0.75), lwd = 2)
+      points(trend_past$median ~ I(trend_past$age + 0.3), pch = 19, cex = 0.6,
+             col = scales::alpha("#E44253", 1))
+      # ever
+      segments(x0 = trend_ever$age - 0.3, y0 = trend_ever$lci,
+               x1 = trend_ever$age - 0.3, y1 = trend_ever$uci,
+               col = scales::alpha("#90C4AA", 0.75), lwd = 2)
+      points(trend_ever$median ~ I(trend_ever$age - 0.3), pch = 19, cex = 0.6,
+            col = scales::alpha("#90C4AA", 1))
+  
+  legend("topright", lwd = 3, col = c(scales::alpha("#90C4AA", 1), scales::alpha("#E44253", 1)),
+         legend = c("Lifetime", "Past year"), bty = "n")
+  dev.off()
+}
 
 pool_glb_ipv_nspv <- function(pred_ever, pred_npsv, cor, ll_age = 15, ul_age = 49, 
                               suffix, save_results = TRUE) {
@@ -3495,8 +3954,8 @@ pool_glb_ipv_nspv <- function(pred_ever, pred_npsv, cor, ll_age = 15, ul_age = 4
 
   # === ==== === === ===
   # prevalence 15-49
-  y_pred_both <- array(NA, dim = c(dim(y_pred_ever)[1], dim(y_pred_ever)[3]))
-  denom_both <- array(NA, dim = dim(y_pred_ever)[1])
+  y_pred_both_1549 <- array(NA, dim = c(dim(y_pred_ever)[1], dim(y_pred_ever)[3]))
+  denom_both_1549 <- array(NA, dim = dim(y_pred_ever)[1])
   
   pb <- txtProgressBar(1, dim(y_pred_ever)[1], style = 3)
   for (i in 1:dim(y_pred_ever)[1]) {
@@ -3505,22 +3964,22 @@ pool_glb_ipv_nspv <- function(pred_ever, pred_npsv, cor, ll_age = 15, ul_age = 4
 
     comb <- ipv_ever + npsv_ever - 
       (ipv_ever * npsv_ever + cor * sqrt(ipv_ever * (1 - ipv_ever) * npsv_ever * (1 - npsv_ever)))
-    y_pred_both[i, ] <- comb * sum(y_denom_ever[i, which(age >= ll_age & age <= ul_age)])
-    denom_both[i] <- sum(y_denom_ever[i, which(age >= ll_age & age <= ul_age)])
+    y_pred_both_1549[i, ] <- comb * sum(y_denom_ever[i, which(age >= ll_age & age <= ul_age)])
+    denom_both_1549[i] <- sum(y_denom_ever[i, which(age >= ll_age & age <= ul_age)])
   setTxtProgressBar(pb, i)
   }
   close(pb)
 
   # Prevalence 1549
-  tot_num <- colSums(y_pred_both[, ])
-  tot_den <- sum(denom_both)
-  prv_ <- tot_num / tot_den
+  tot_num_1549 <- colSums(y_pred_both_1549[, ])
+  tot_den_1549 <- sum(denom_both_1549)
+  prv_ <- tot_num_1549 / tot_den_1549
   prv_1549 <- quantile(prv_, probs = c(0.5, 0.025, 0.975))  
   
   # === ==== === === ===
   # 15+
-  y_pred_both <- array(NA, dim = c(dim(y_pred_ever)[1], dim(y_pred_ever)[3]))
-  denom_both <- array(NA, dim = dim(y_pred_ever)[1])
+  y_pred_both_15p <- array(NA, dim = c(dim(y_pred_ever)[1], dim(y_pred_ever)[3]))
+  denom_both_15p <- array(NA, dim = dim(y_pred_ever)[1])
   
   pb <- txtProgressBar(1, dim(y_pred_ever)[1], style = 3)
   for (i in 1:dim(y_pred_ever)[1]) {
@@ -3529,28 +3988,124 @@ pool_glb_ipv_nspv <- function(pred_ever, pred_npsv, cor, ll_age = 15, ul_age = 4
 
     comb <- ipv_ever + npsv_ever - 
       (ipv_ever * npsv_ever + cor * sqrt(ipv_ever * (1 - ipv_ever) * npsv_ever * (1 - npsv_ever)))
-    y_pred_both[i, ] <- comb * sum(y_denom_ever[i, ])
-    denom_both[i] <- sum(y_denom_ever[i, ])
+    y_pred_both_15p[i, ] <- comb * sum(y_denom_ever[i, ])
+    denom_both_15p[i] <- sum(y_denom_ever[i, ])
   setTxtProgressBar(pb, i)
   }
   close(pb)
 
   # Prevalence 15+  
-  tot_num <- colSums(y_pred_both[, ])
-  tot_den <- sum(denom_both)
-  prv_ <- tot_num / tot_den
+  tot_num_15p <- colSums(y_pred_both_15p[, ])
+  tot_den_15p <- sum(denom_both_15p)
+  prv_ <- tot_num_15p / tot_den_15p
   prv_1599 <- quantile(prv_, probs = c(0.5, 0.025, 0.975))
   
-  val <- data.frame(age_grp = c(paste(ll_age, "-", ul_age, sep = ""), "15+"),
+  global_res <- data.frame(age_grp = c(paste(ll_age, "-", ul_age, sep = ""), "15+"),
                     median = c(prv_1549[1], prv_1599[1]), 
                     lci = c(prv_1549[2], prv_1599[2]), 
-                    uci = c(prv_1549[3], prv_1599[3]))
+                    uci = c(prv_1549[3], prv_1599[3]),
+                    women = c(quantile(tot_num_1549, probs = 0.5), 
+                              quantile(tot_num_15p, probs = 0.5)),
+                    women_lci = c(quantile(tot_num_1549, probs = 0.025),
+                                  quantile(tot_num_15p, probs = 0.025)),
+                    women_uci = c(quantile(tot_num_1549, probs = 0.975),
+                                  quantile(tot_num_15p, probs = 0.975)))
        
+  # by 10-year age groups
+  age_grp_lb <- seq(15, 65, by = 10) 
+  age_grp_ub <- c(seq(24, 64, by = 10), 104)
+  
+  prv_age_stat <- NULL
+  pb <- txtProgressBar(1, length(age_grp_lb), style = 3)
+  for (i in 1:length(age_grp_lb)) {
+    y_pred_both <- array(NA, dim = c(dim(y_pred_ever)[1], dim(y_pred_ever)[3]))
+    denom_both <- array(NA, dim = dim(y_pred_ever)[1])
+    for (j in 1:dim(y_pred_ever)[1]) {
+      ipv_ever <- colSums(y_pred_ever[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i]), ]) / 
+                      sum(y_denom_ever[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i])])
+      npsv_ever <- colSums(y_pred_npsv[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i]), ]) / 
+                      sum(y_denom_npsv[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i])])
 
-
-    
-  if (save_results == TRUE) {
-    write.csv(val, file = paste("Estimates Global IPV & NPSV ", suffix, ".csv", sep = ""))      
+      comb <- ipv_ever + npsv_ever - 
+          (ipv_ever * npsv_ever + cor * sqrt(ipv_ever * (1 - ipv_ever) * npsv_ever * (1 - npsv_ever)))
+      y_pred_both[j, ] <- comb * sum(y_denom_ever[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i])])
+      denom_both[j] <- sum(y_denom_ever[j, which(age >= age_grp_lb[i] & age <= age_grp_ub[i])])
+    }
+    prv_age_stat_i <- data.frame(age_grp = paste(age_grp_lb[i], "-", age_grp_ub[i], sep = ""),
+                                  median = quantile(colSums(y_pred_both[, ] / sum(denom_both)), probs = 0.5),
+                                  lci = quantile(colSums(y_pred_both[, ] / sum(denom_both)), probs = 0.025),
+                                  uci = quantile(colSums(y_pred_both[, ] / sum(denom_both)), probs = 0.975),
+                                  women = quantile(colSums(y_pred_both[, ]), probs = 0.5),
+                                  women_lci = quantile(colSums(y_pred_both[, ]), probs = 0.025),
+                                  women_uci = quantile(colSums(y_pred_both[, ]), probs = 0.975))
+    prv_age_stat <- rbind(prv_age_stat, prv_age_stat_i)
+    setTxtProgressBar(pb, i)
   }
-  return(val)
+  close(pb)  
+  
+  global_res <- rbind(global_res, prv_age_stat)
+  global_res$women <- round(global_res$women) * 1000
+  global_res$women_lci <- round(global_res$women_lci) * 1000
+  global_res$women_uci <- round(global_res$women_uci) * 1000 
+  
+  if (save_results == TRUE) {
+    write.csv(global_res, file = paste("Estimates Global IPV & NPSV ", suffix, ".csv", sep = ""))      
+  }
+  
+  # Among 15+: By WHO region (including high-income as a separate category)
+  comb_who <- NULL
+  R <- unique(as.character(YPInd_ever$WHO_HI))
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1_i <- YPInd_ever$D1[YPInd_ever$WHO_HI == i]
+    tot_num_i <- colSums(y_pred_both_15p[D1_i, ])
+    tot_den_i <- sum(denom_both_15p[D1_i])
+    prv_i <- tot_num_i / tot_den_i
+    comb_who_i <- data.frame(WHO_HI = i, age_grp = "15+",
+                        median = quantile(prv_i, probs = 0.5),
+                        lci = quantile(prv_i, probs = 0.025),
+                        uci = quantile(prv_i, probs = 0.975),
+                        women = round(quantile(tot_num_i, probs = 0.5)) * 1000,
+                        women_lci = round(quantile(tot_num_i, probs = 0.025)) * 1000,
+                        women_uci = round(quantile(tot_num_i, probs = 0.975)) * 1000)
+  comb_who <- rbind(comb_who, comb_who_i)
+  setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(comb_who) <- NULL
+  comb_who_15p <- comb_who
+
+  if (save_results == TRUE) {
+    write.csv(comb_who_15p, file = paste("Estimates Global IPV & NPSV by WHO Regions (15+)",
+              suffix, ".csv", sep = "")) }
+  
+  # Among 1549: By WHO region (including high-income as a separate category)
+  comb_who <- NULL
+  R <- unique(as.character(YPInd_ever$WHO_HI))
+  pb <- txtProgressBar(1, length(R), style = 3)
+  for (i in R) {
+    D1_i <- YPInd_ever$D1[YPInd_ever$WHO_HI == i]
+    tot_num_i <- colSums(y_pred_both_1549[D1_i, ])
+    tot_den_i <- sum(denom_both_1549[D1_i])
+    prv_i <- tot_num_i / tot_den_i
+    comb_who_i <- data.frame(WHO_HI = i, age_grp = paste(ll_age, "-", ul_age, sep = ""),
+                        median = quantile(prv_i, probs = 0.5),
+                        lci = quantile(prv_i, probs = 0.025),
+                        uci = quantile(prv_i, probs = 0.975),
+                        women = round(quantile(tot_num_i, probs = 0.5)) * 1000,
+                        women_lci = round(quantile(tot_num_i, probs = 0.025)) * 1000,
+                        women_uci = round(quantile(tot_num_i, probs = 0.975)) * 1000)
+  comb_who <- rbind(comb_who, comb_who_i)
+  setTxtProgressBar(pb, which(R == i))
+  }
+  close(pb)
+  rownames(comb_who) <- NULL
+  comb_who_1549 <- comb_who
+  
+  if (save_results == TRUE) {
+    write.csv(comb_who_1549, file = paste("Estimates Global IPV & NPSV by WHO Regions (",
+              paste(ll_age, "-", ul_age, sep = ""), ")",
+              suffix, ".csv", sep = "")) } 
+  
+  return(global_res)
 }

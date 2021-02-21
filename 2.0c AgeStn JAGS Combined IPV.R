@@ -189,7 +189,9 @@ SDat <- SDat_original <- list(W = wom_by_age_and_region_2010,
              N_const = nrow(xprd), start_e = sdat_ever$N, start_p = sdat_past$N,
              N_age = ind_1519,
              ones = rep(1, nrow(xprd)),
-             ones_age = rep(1, ind_1519))
+             ones_age = rep(1, ind_1519),
+             n_age_e = nrow(Spl_W_e),
+             n_age_p = nrow(Spl_W_p))
 
 
 # ### ### ### ### ### ### ### ### ###
@@ -199,20 +201,23 @@ library(rjags)
 modelstring = "
 model {
   # --- Ever IPV ----
+
   # Likelihood
   for (i in 1:N_e) {
     Num_e[i] ~ dbin(linpred_e[i], Denom_e[i])
-    logit(linpred_e[i]) <- a_i_e[Study_e[i]] + XDat_e[i] + SumSpl_e[i] + Spl_t_e_coeff[i]
-    # Age-Standardization (WSum stores the cumulative sum)
-    WSum_e[i, 1] <- inprod(Spl_W_e[li_e[i]:ui_e[i], 1] * b_spl_c_e[Country_e[i], 1], W[li_e[i]:ui_e[i], ColIndex_e[i]])
-    for (j in 2:Ndof_e) {
-    WSum_e[i, j] <- WSum_e[i, j - 1] + inprod(Spl_W_e[li_e[i]:ui_e[i], j] * b_spl_c_e[Country_e[i], j], W[li_e[i]:ui_e[i], ColIndex_e[i]])
-    }
-    SumSpl_e[i] <- WSum_e[i, Ndof_e] / sum(W[li_e[i]:ui_e[i], ColIndex_e[i]])
     # Splines times
     Spl_t_e_coeff[i] <- inprod(Spl_t_e[i, ], b_t_c_e[Country_e[i], ])
-    # For constraint
-    logit(prv_e[i]) <- a_c_e[Country_e[i]] + SumSpl_e[i] + Spl_t_e_coeff[i]
+    # Age-Standardization
+    total_weight_e[i] <- sum(W[li_e[i]:ui_e[i], ColIndex_e[i]])
+      for (j in 1:n_age_e) {
+        logit(age_prev_e[i, j]) <- a_i_e[Study_e[i]] + XDat_e[i] + Spl_t_e_coeff[i] + age_spl_country_e[Country_e[i], j]
+        logit(prv_age_constraint_e[i, j]) <- a_c_e[Country_e[i]] + Spl_t_e_coeff[i] + age_spl_country_e[Country_e[i], j]
+      }
+      linpred_e[i] <- inprod(age_prev_e[i, li_e[i]:ui_e[i]], 
+                             W[li_e[i]:ui_e[i], ColIndex_e[i]] / total_weight_e[i])
+      # For constraint
+      prv_e[i] <- inprod(prv_age_constraint_e[i, li_e[i]:ui_e[i]], 
+                         W[li_e[i]:ui_e[i], ColIndex_e[i]] / total_weight_e[i])
     }
 
   # Priors
@@ -230,6 +235,9 @@ model {
   # Country
   for (c in 1:C_e) {
     a_c_e[c] ~ dnorm(a_r_e[RLookUp_e[c]], tau_ac_e)
+    # indexing to get matrix of contry-specific and age-specific spline coefficients
+    for (k in 1:n_age_e) {
+      age_spl_country_e[c, k] <- inprod(Spl_W_e[k, ],  b_spl_c_e[c, ]) }
     for (t in 1:Nt_e) {
       b_t_c_e[c, t] ~ dnorm(b_t_r_e[RLookUp_e[c], t], tau_t_c_e[t]) }
     for (j in 1:Ndof_e) {
@@ -291,18 +299,20 @@ model {
   # Likelihood
   for (i in 1:N_p) {
     Num_p[i] ~ dbin(linpred_p[i], Denom_p[i])
-    logit(linpred_p[i]) <- a_i_p[Study_p[i]] + XDat_p[i] + SumSpl_p[i] + Spl_t_p_coeff[i] 
-    # Age-Standardization (WSum stores the cumulative sum)
-    WSum_p[i, 1] <- inprod(Spl_W_p[li_p[i]:ui_p[i], 1] * b_spl_c_p[Country_p[i], 1], W[li_p[i]:ui_p[i], ColIndex_p[i]])
-    for (j in 2:Ndof_p) {
-    WSum_p[i, j] <- WSum_p[i, j - 1] + inprod(Spl_W_p[li_p[i]:ui_p[i], j] * b_spl_c_p[Country_p[i], j], W[li_p[i]:ui_p[i], ColIndex_p[i]])
-    }
-    SumSpl_p[i] <- WSum_p[i, Ndof_p] / sum(W[li_p[i]:ui_p[i], ColIndex_p[i]])
     # Splines times
     Spl_t_p_coeff[i] <- inprod(Spl_t_p[i, ], b_t_c_p[Country_p[i], ])
-    # For constraint
-    logit(prv_p[i]) <- a_c_p[Country_p[i]] + SumSpl_p[i] + Spl_t_p_coeff[i] 
-    } 
+    # Age-Standardization
+    total_weight_p[i] <- sum(W[li_p[i]:ui_p[i], ColIndex_p[i]])
+      for (j in 1:n_age_p) {
+        logit(age_prev_p[i, j]) <- a_i_p[Study_p[i]] + XDat_p[i] + Spl_t_p_coeff[i] + age_spl_country_p[Country_p[i], j]
+        logit(prv_age_constraint_p[i, j]) <- a_c_p[Country_p[i]] + Spl_t_p_coeff[i] + age_spl_country_p[Country_p[i], j]
+      }
+      linpred_p[i] <- inprod(age_prev_p[i, li_p[i]:ui_p[i]], 
+                           W[li_p[i]:ui_p[i], ColIndex_p[i]] / total_weight_p[i])
+      # For constraint
+      prv_p[i] <- inprod(prv_age_constraint_p[i, li_p[i]:ui_p[i]], 
+                           W[li_p[i]:ui_p[i], ColIndex_p[i]] / total_weight_p[i])
+  }
 
   # Priors
     a_g_p ~ dnorm(0, 0.001)
@@ -319,6 +329,9 @@ model {
   # Country
   for (c in 1:C_p) {
     a_c_p[c] ~ dnorm(a_r_p[RLookUp_p[c]], tau_ac_p)
+    # indexing to get matrix of contry-specific and age-specific spline coefficients
+    for (k in 1:n_age_e) {
+      age_spl_country_p[c, k] <- inprod(Spl_W_p[k, ],  b_spl_c_p[c, ]) }
     for (t in 1:Nt_p) {
       b_t_c_p[c, t] ~ dnorm(b_t_r_p[RLookUp_p[c], t], tau_t_c_p[t]) }
     for (j in 1:Ndof_p) {
@@ -440,7 +453,7 @@ LogOR_Urban_p <- LogOR_Urban
 
 # ---- LHS Sample for X-Walk ----
 #' --- Set to 1 if you only want to fit without uncertainty in the x-walk
-n_mi <- 10 
+n_mi <- 10
 #' ---
 lhs_severe_e <- OR_to_use_lhs(LogOR_Severe_e, n = n_mi, truncate = TRUE)
 lhs_sexual_e <- OR_to_use_lhs(LogOR_Sexual_e, n = n_mi, truncate = TRUE)
@@ -526,23 +539,6 @@ for (i in 1:n_mi) {
   res_past <- process_lhs(res_lhs_p)
 
 
-save_results <- FALSE
-if (save_results == TRUE ) {
-#     save(res_ever, modelstring, SDat_original, sdat_ever,
-#         Center_a, Center_t, n_chain, n_iter,
-#         XDat_e, ipv_e,
-#         file = "~/Desktop/MCMC JNT IPV AgeStd Ever - 2020-10-30.RData")
-#     save(res_past, modelstring, SDat_original, sdat_past,
-#         Center_a, Center_t, n_chain, n_iter,
-#         XDat_p, ipv_p,
-#        file = "~/Desktop/MCMC JNT IPV AgeStd Past Yr - 2020-10-30.RData")
-#     save(MCMC, file = "~/Desktop/MCMC JNT IPV - 2020-10-30.RData")
- load("~/Desktop/MCMC JNT IPV AgeStd Ever - 2020-10-30.RData")  
- load("~/Desktop/MCMC JNT IPV AgeStd Past Yr - 2020-10-30.RData")
- load("~/Desktop/MCMC JNT IPV - 2020-10-30.RData")
-}  
-
-
 # Diagnostics
 DoDiagnostic <- FALSE
 if (DoDiagnostic == TRUE) {
@@ -577,7 +573,11 @@ if (DoDiagnostic == TRUE) {
   effectiveSize(MCMC_e[["sd_t_sr"]])  
   effectiveSize(MCMC_e[["sd_t_r"]])  
   effectiveSize(MCMC_e[["sd_t_c"]])
-     
+ 
+  gelman.diag(MCMC_e[["a_i"]])
+  gelman.diag(MCMC_e[["a_c"]])    
+  gelman.diag(MCMC_e[["a_r"]])  
+  
   # using the last imputation - past
   MCMC_p <- process_mcmc(MCMC, report = "past")
   effectiveSize(MCMC_p[["a_g"]])
@@ -609,6 +609,11 @@ if (DoDiagnostic == TRUE) {
   effectiveSize(MCMC_p[["sd_t_r"]])  
   effectiveSize(MCMC_p[["sd_t_c"]])  
   
+  gelman.diag(MCMC_p[["a_i"]])
+  gelman.diag(MCMC_p[["a_c"]])    
+  gelman.diag(MCMC_p[["a_r"]])  
+  
+  # plotting traceplots (takes a while to execute)
   Col <- c(rgb(20, 180, 235, 255, max = 255), rgb(134, 179, 0, 255, max = 255), rgb(204, 0, 67, 255, max = 255),
            rgb(255, 173, 51, 255, max = 255), rgb(255, 102, 53, 255, max = 255), rgb(135, 132, 148, 255, max = 255),
            rgb(128, 0, 128, 150, max = 255), rgb(102, 0, 53, 255, max = 255),

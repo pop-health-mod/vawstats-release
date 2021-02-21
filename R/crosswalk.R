@@ -23,6 +23,11 @@ npsv_no_na <- function(IPV, add = "") {
 }
 
 meta_proc <- function(C_data, var, event.name, is.dhs = FALSE, npsv = FALSE) { 
+
+  if (length(C_data$author_year) == 0) {
+    C_data$author_year <- C_data$ID
+  }
+    
   C_meta <- NULL
   UID <- unique(C_data$subclass)
   for (i in 1:length(unique(C_data$subclass))) {
@@ -72,6 +77,11 @@ meta_proc <- function(C_data, var, event.name, is.dhs = FALSE, npsv = FALSE) {
 }
 
 meta_proc_geo <- function(C_data, var, event.name) { 
+    
+  if (length(C_data$author_year) == 0) {
+    C_data$author_year <- C_data$ID
+    }
+  
   C_meta <- NULL
   UID <- unique(C_data$ID)
   for (i in 1:length(unique(C_data$ID))) {
@@ -102,6 +112,11 @@ meta_proc_geo <- function(C_data, var, event.name) {
 }
 
 meta_proc_geo_npsv <- function(C_data, var, event.name) { 
+  
+  if (length(C_data$author_year) == 0) {
+    C_data$author_year <- C_data$ID
+    }
+  
   C_meta <- NULL
   UID <- unique(C_data$ID)
   for (i in 1:length(unique(C_data$ID))) {
